@@ -1,0 +1,10 @@
+{
+  "rules": [
+    {"name": "lovely7単体", "allOf": ["lovely7"]},
+    {"name": "lovely7 + birthday", "allOf": ["lovely7", "birthday"]},
+    {"name": "表記ゆれ + event", "allOf": ["event"], "anyOf": ["lovely7", "lovelyseven"]},
+    {"name": "3タグ中2つ", "tags": ["lovely7", "birthday", "idol"], "minMatches": 2}
+  ],
+  "maxNotificationsPerRun": 20,
+  "collector": {"scrolls": 3, "waitSeconds": 5}
+}

@@ -1,0 +1,7 @@
+{
+  "rules": [
+    {"name": "lovely7", "allOf": ["lovely7"]}
+  ],
+  "maxNotificationsPerRun": 20,
+  "collector": {"scrolls": 3, "waitSeconds": 5}
+}
