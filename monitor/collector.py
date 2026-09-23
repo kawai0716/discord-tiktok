@@ -76,12 +76,21 @@ class BrowserCollector:
                     page = context.new_page()
                     found = {}
                     invalid = []
+                    diagnostics = {'list_responses': 0, 'script_failures': 0, 'page_errors': 0}
+                    def request_failed(request):
+                        if request.resource_type == 'script':
+                            diagnostics['script_failures'] += 1
+                    def page_error(error):
+                        diagnostics['page_errors'] += 1
+                    page.on('requestfailed', request_failed)
+                    page.on('pageerror', page_error)
                     def response_received(response):
                         parsed = urlparse(response.url)
                         if parsed.hostname not in {'www.tiktok.com', 'www.tiktokv.com'}:
                             return
                         if parsed.path.rstrip('/') != '/api/challenge/item_list':
                             return
+                        diagnostics['list_responses'] += 1
                         try:
                             if response.status != 200:
                                 invalid.append(f'HTTP {response.status}')
@@ -125,6 +134,16 @@ class BrowserCollector:
                                     invalid.append('埋め込みJSON解析失敗')
                         if step < self.scrolls:
                             page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    if invalid or not found:
+                        location = urlparse(page.url)
+                        diagnostics.update({
+                            'host': location.hostname, 'path': location.path,
+                            'title': page.title(),
+                            'video_links': page.locator('a[href*="/video/"]').count(),
+                            'hydration_scripts': page.locator('script[id="__UNIVERSAL_DATA_FOR_REHYDRATION__"], script[id="SIGI_STATE"]').count(),
+                            'visible_text': page.locator('body').inner_text(timeout=5000)[:300],
+                        })
+                        log.error('fetch_diagnostics=%s', json.dumps(diagnostics, ensure_ascii=False))
                     if invalid:
                         raise FetchError(f'#{tag}: {invalid[0]}')
                     if not found:

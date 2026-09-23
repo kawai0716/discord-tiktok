@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/check-tiktok.yml'
+      - 'monitor/collector.py'
   workflow_dispatch:
 
 permissions:
