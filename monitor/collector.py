@@ -111,29 +111,41 @@ class BrowserCollector:
                         except Exception:
                             invalid.append('動画一覧JSON解析失敗')
                     page.on('response', response_received)
-                    response = page.goto(f'https://www.tiktok.com/tag/{quote(tag, safe="")}',
-                                         wait_until='domcontentloaded', timeout=45000)
-                    if not response or response.status >= 400:
-                        raise FetchError(f'#{tag}: ページ取得失敗')
-                    for step in range(self.scrolls + 1):
-                        page.wait_for_timeout(self.wait_seconds * 1000)
-                        for script_id in ('__UNIVERSAL_DATA_FOR_REHYDRATION__', 'SIGI_STATE'):
-                            script = page.locator(f'script[id="{script_id}"]')
-                            if script.count():
-                                try:
-                                    payload = json.loads(script.first.text_content() or '{}')
-                                    # Restrict hydration traversal to tag-specific scopes, not recommendations.
-                                    if script_id == 'SIGI_STATE':
-                                        payload = payload.get('ItemModule', {})
-                                    else:
-                                        payload = {k: v for k, v in payload.get('__DEFAULT_SCOPE__', {}).items()
-                                                   if 'challenge' in k}
-                                    for post in posts_in_payload(payload):
-                                        found[post.id] = post
-                                except (ValueError, TypeError):
-                                    invalid.append('埋め込みJSON解析失敗')
-                        if step < self.scrolls:
-                            page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                    response = None
+                    for attempt in range(3):
+                        found.clear()
+                        invalid.clear()
+                        for key in diagnostics:
+                            diagnostics[key] = 0
+                        response = page.goto(f'https://www.tiktok.com/tag/{quote(tag, safe="")}',
+                                             wait_until='domcontentloaded', timeout=45000) if attempt == 0 else page.reload(
+                                                 wait_until='domcontentloaded', timeout=45000)
+                        if not response or response.status >= 400:
+                            raise FetchError(f'#{tag}: ページ取得失敗')
+                        for step in range(self.scrolls + 1):
+                            page.wait_for_timeout(self.wait_seconds * 1000)
+                            for script_id in ('__UNIVERSAL_DATA_FOR_REHYDRATION__', 'SIGI_STATE'):
+                                script = page.locator(f'script[id="{script_id}"]')
+                                if script.count():
+                                    try:
+                                        payload = json.loads(script.first.text_content() or '{}')
+                                        # Restrict hydration traversal to tag-specific scopes, not recommendations.
+                                        if script_id == 'SIGI_STATE':
+                                            payload = payload.get('ItemModule', {})
+                                        else:
+                                            payload = {k: v for k, v in payload.get('__DEFAULT_SCOPE__', {}).items()
+                                                       if 'challenge' in k}
+                                        for post in posts_in_payload(payload):
+                                            found[post.id] = post
+                                    except (ValueError, TypeError):
+                                        invalid.append('埋め込みJSON解析失敗')
+                            if step < self.scrolls:
+                                page.evaluate('window.scrollTo(0, document.body.scrollHeight)')
+                        text = page.locator('body').inner_text(timeout=5000)
+                        human_check = any(word in text for word in ('スライダーをドラッグ', 'パズルを完成', 'Verify', 'captcha'))
+                        if found or human_check or attempt == 2:
+                            break
+                        log.warning('#%s: 一時的なページエラーのため再読み込み (%d/2)', tag, attempt + 1)
                     if invalid or not found:
                         location = urlparse(page.url)
                         diagnostics.update({
@@ -141,7 +153,7 @@ class BrowserCollector:
                             'title': page.title(),
                             'video_links': page.locator('a[href*="/video/"]').count(),
                             'hydration_scripts': page.locator('script[id="__UNIVERSAL_DATA_FOR_REHYDRATION__"], script[id="SIGI_STATE"]').count(),
-                            'visible_text': page.locator('body').inner_text(timeout=5000)[:300],
+                            'visible_text': text[:300],
                         })
                         log.error('fetch_diagnostics=%s', json.dumps(diagnostics, ensure_ascii=False))
                     if invalid:
